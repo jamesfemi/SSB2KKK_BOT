@@ -1,10 +1,11 @@
 import os
 import re
 import logging
+import asyncio  # Make sure asyncio is imported at the top!
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Enable logging so you can see what's happening in your Render logs
+# Enable logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -29,11 +30,9 @@ async def count_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
-    # Count of raw characters
     total_chars_with_spaces = len(text)
     total_chars_no_spaces = len(text.replace(" ", ""))
 
-    # Word counting logic using symbols/spaces as separators
     words = re.findall(r'\b\w+\b', text)
     word_count = len(words)
 
@@ -46,7 +45,8 @@ async def count_words(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(response, parse_mode="Markdown")
 
-def main():
+async def start_bot():
+    """Async function to initialize and run the polling loop."""
     if not TOKEN:
         logger.error("No TELEGRAM_TOKEN found in environment variables!")
         return
@@ -58,9 +58,32 @@ def main():
     ptb_app.add_handler(CommandHandler("start", start))
     ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, count_words))
 
-    # Start the Bot using Polling (Perfect for Background Workers)
-    logger.info("Bot started via polling...")
-    ptb_app.run_polling(drop_pending_updates=True)
+    logger.info("Bot initialized. Starting polling loop...")
+    
+    # We initialize and run polling within the active async context
+    await ptb_app.initialize()
+    await ptb_app.updater.start_polling(drop_pending_updates=True)
+    await ptb_app.start()
+    
+    logger.info("Bot is running and listening via polling.")
+    
+    # Keep running until interrupted
+    try:
+        while True:
+            await asyncio.sleep(3600)
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Stopping bot...")
+    finally:
+        await ptb_app.updater.stop()
+        await ptb_app.stop()
+        await ptb_app.shutdown()
+
+def main():
+    # Force creation and management of the event loop for Python 3.14+
+    try:
+        asyncio.run(start_bot())
+    except Exception as e:
+        logger.critical(f"Unhandled exception in main loop: {e}", exc_info=True)
 
 if __name__ == "__main__":
     main()
